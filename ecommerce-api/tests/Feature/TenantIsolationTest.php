@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class TenantIsolationTest extends TestCase
@@ -18,13 +19,14 @@ class TenantIsolationTest extends TestCase
         $user = User::factory()->create();
         $tenantA = Tenant::factory()->create();
         $tenantB = Tenant::factory()->create();
-        $user->tenants()->attach($tenantA->id, ['role' => 'owner', 'is_owner' => true]);
+        $user->tenants()->attach($tenantA->id, ['role' => 'owner']);
 
         Category::factory()->count(3)->forTenant($tenantA)->create();
         Category::factory()->count(2)->forTenant($tenantB)->create();
 
-        $response = $this->actingAs($user)
-            ->withHeaders(['X-Tenant-Id' => (string) $tenantA->id])
+        Sanctum::actingAs($user, ['tenant:'.$tenantA->id, 'role:owner']);
+
+        $response = $this->withHeaders(['X-Tenant-Id' => (string) $tenantA->id])
             ->getJson('/api/v1/categories');
 
         $response
@@ -41,7 +43,7 @@ class TenantIsolationTest extends TestCase
         $user = User::factory()->create();
         $tenantA = Tenant::factory()->create();
         $tenantB = Tenant::factory()->create();
-        $user->tenants()->attach($tenantA->id, ['role' => 'manager', 'is_owner' => false]);
+        $user->tenants()->attach($tenantA->id, ['role' => 'staff']);
 
         $categoryA = Category::factory()->forTenant($tenantA)->create();
         $categoryB = Category::factory()->forTenant($tenantB)->create();
@@ -49,8 +51,9 @@ class TenantIsolationTest extends TestCase
         Product::factory()->forCategory($categoryA)->create();
         $otherTenantProduct = Product::factory()->forCategory($categoryB)->create();
 
-        $this->actingAs($user)
-            ->withHeaders(['X-Tenant-Id' => (string) $tenantA->id])
+        Sanctum::actingAs($user, ['tenant:'.$tenantA->id, 'role:staff']);
+
+        $this->withHeaders(['X-Tenant-Id' => (string) $tenantA->id])
             ->getJson('/api/v1/products/'.$otherTenantProduct->id)
             ->assertNotFound();
     }
